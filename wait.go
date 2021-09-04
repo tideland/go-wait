@@ -37,7 +37,7 @@ func Poll(ctx context.Context, ticker TickerFunc, condition ConditionFunc) error
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Errorf("context has been cancelled with error: %v", ctx.Err())
+			return fmt.Errorf("context has been cancelled with error: %v", ctx.Err())
 		case _, open := <-tickc:
 			// Ticker sent a signal to check for condition.
 			if !open {
