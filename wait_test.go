@@ -25,86 +25,129 @@ import (
 // TESTS
 //--------------------
 
-// TestPollWithChangingInterval tests the polling of conditions with
-// changing interval durations.
-func TestPollWithChangingInterval(t *testing.T) {
-	// Init.
+// TestPolls verifies Poll() with different parameters.
+func TestChangingInterval(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
-	makeChanger := func(interval time.Duration) wait.TickChangerFunc {
-		return func(in time.Duration) (out time.Duration, ok bool) {
-			if in == 0 {
-				return interval, true
-			}
-			out = in * 2
-			if out > time.Second {
-				return 0, false
-			}
-			return out, true
-		}
+	tests := []struct {
+		name     string
+		ticker   func() wait.TickerFunc
+		duration time.Duration
+		count    int
+		err      string
+	}{
+		{
+			name: "interval-poll-success",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeIntervalTicker(5 * time.Millisecond)
+			},
+			count: 5,
+		}, {
+			name: "interval-poll-context-cancelled",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeIntervalTicker(5 * time.Millisecond)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name:   "changing-interval-poll-success",
+			ticker: mkChgTicker,
+			count:  5,
+		}, {
+			name:   "changing-interval-poll-ticker-exceeds",
+			ticker: mkChgTicker,
+			err:    "ticker exceeded while waiting for the condition",
+		}, {
+			name:     "changing-interval-poll-context-cancelled",
+			ticker:   mkChgTicker,
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "max-interval-poll-success",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeMaxIntervalsTicker(5*time.Millisecond, 10)
+			},
+			count: 5,
+		}, {
+			name: "max-interval-ticker-exceeds",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeMaxIntervalsTicker(5*time.Millisecond, 10)
+			},
+			err: "ticker exceeded while waiting for the condition",
+		}, {
+			name: "max-interval-poll-context-cancelled",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeMaxIntervalsTicker(5*time.Millisecond, 10)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "deadlined-interval-poll-success",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeDeadlinedIntervalTicker(5*time.Millisecond, time.Now().Add(55*time.Millisecond))
+			},
+			count: 5,
+		}, {
+			name: "deadlined-interval-poll-ticker-exceeds",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeDeadlinedIntervalTicker(5*time.Millisecond, time.Now().Add(55*time.Millisecond))
+			},
+			err: "ticker exceeded while waiting for the condition",
+		}, {
+			name: "deadline-interval-poll-context-cancelled",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeDeadlinedIntervalTicker(5*time.Millisecond, time.Now().Add(55*time.Millisecond))
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "expiring-interval-poll-success",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeExpiringIntervalTicker(5*time.Millisecond, 55*time.Millisecond)
+			},
+			count: 5,
+		}, {
+			name: "expiring-interval-poll-ticker-exceeds",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeExpiringIntervalTicker(5*time.Millisecond, 55*time.Millisecond)
+			},
+			err: "ticker exceeded while waiting for the condition",
+		}, {
+			name: "expiring-interval-poll-context-cancelled",
+			ticker: func() wait.TickerFunc {
+				return wait.MakeExpiringIntervalTicker(5*time.Millisecond, 55*time.Millisecond)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		},
 	}
-
-	// Tests.
-	count := 0
-	err := wait.Poll(
-		context.Background(),
-		wait.MakeGenericIntervalTicker(makeChanger(10*time.Millisecond)),
-		func() (bool, error) {
-			count++
-			if count == 5 {
-				return true, nil
+	// Run tests.
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.SetFailable(t)
+			ctx := context.Background()
+			if test.duration != 0 {
+				ctx, _ = context.WithTimeout(ctx, test.duration)
 			}
-			return false, nil
-		},
-	)
-	assert.NoError(err)
-	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeGenericIntervalTicker(makeChanger(10*time.Millisecond)),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Equal(count, 7, "exceeded with a count")
-
-	count = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
-	defer cancel()
-	err = wait.Poll(
-		ctx,
-		wait.MakeGenericIntervalTicker(makeChanger(10*time.Millisecond)),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Range(count, 4, 6, "test is race, depending on scheduling")
-}
-
-// TestPollMakeIntervalTicker verifies Poll() with MakeIntervalTicker().
-func TestPollMakeIntervalTicker(t *testing.T) {
-	// Init.
-	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Test.
-	count := 0
-	err := wait.Poll(
-		context.Background(),
-		wait.MakeIntervalTicker(20*time.Millisecond),
-		func() (bool, error) {
-			count++
-			if count > 5 {
-				return true, nil
+			count := 0
+			err := wait.Poll(
+				ctx,
+				test.ticker(),
+				func() (bool, error) {
+					count++
+					if count == test.count {
+						return true, nil
+					}
+					return false, nil
+				},
+			)
+			if test.err == "" {
+				assert.NoError(err)
+				assert.Equal(count, test.count)
+			} else {
+				assert.ErrorContains(err, test.err)
 			}
-			return false, nil
-		},
-	)
-	assert.NoError(err)
+		})
+	}
 }
 
 // TestWithInterval verifies WithInterval().
@@ -116,33 +159,13 @@ func TestWithInterval(t *testing.T) {
 	count := 0
 	err := wait.WithInterval(context.Background(), 20*time.Millisecond, func() (bool, error) {
 		count++
-		if count > 5 {
+		if count == 5 {
 			return true, nil
 		}
 		return false, nil
 	})
 	assert.NoError(err)
-}
-
-// TestPollContextTimeout verifies Poll() with a timeout of the context.
-func TestPollContextTimeout(t *testing.T) {
-	// Init.
-	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Test.
-	count := 0
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	err := wait.Poll(
-		ctx,
-		wait.MakeIntervalTicker(5*time.Millisecond),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Range(count, 4, 6, "test is race, depending on scheduling")
+	assert.Equal(count, 5)
 }
 
 // TestPollWithMaxIntervals tests the polling of conditions in a maximum
@@ -153,22 +176,7 @@ func TestPollWithMaxInterval(t *testing.T) {
 
 	// Tests.
 	count := 0
-	err := wait.Poll(
-		context.Background(),
-		wait.MakeMaxIntervalsTicker(20*time.Millisecond, 10),
-		func() (bool, error) {
-			count++
-			if count == 5 {
-				return true, nil
-			}
-			return false, nil
-		},
-	)
-	assert.NoError(err)
-	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.WithMaxIntervals(context.Background(), 20*time.Millisecond, 10, func() (bool, error) {
+	err := wait.WithMaxIntervals(context.Background(), 20*time.Millisecond, 10, func() (bool, error) {
 		count++
 		if count == 5 {
 			return true, nil
@@ -177,115 +185,6 @@ func TestPollWithMaxInterval(t *testing.T) {
 	})
 	assert.NoError(err)
 	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeMaxIntervalsTicker(20*time.Millisecond, 10),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Equal(count, 10, "exceeded with a count")
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeMaxIntervalsTicker(20*time.Millisecond, -1),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Equal(count, 0)
-
-	count = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Millisecond)
-	defer cancel()
-	err = wait.Poll(
-		ctx,
-		wait.MakeMaxIntervalsTicker(20*time.Millisecond, 10),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*cancelled.*")
-	assert.Range(count, 4, 6, "test is race, depending on scheduling")
-}
-
-// TestPollWithDeadline tests the polling of conditions with deadlines.
-func TestPollWithDeadline(t *testing.T) {
-	// Init.
-	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Tests.
-	count := 0
-	err := wait.Poll(
-		context.Background(),
-		wait.MakeDeadlinedIntervalTicker(20*time.Millisecond, time.Now().Add(210*time.Millisecond)),
-		func() (bool, error) {
-			count++
-			if count == 5 {
-				return true, nil
-			}
-			return false, nil
-		},
-	)
-	assert.NoError(err)
-	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.WithDeadline(context.Background(), 20*time.Millisecond, time.Now().Add(210*time.Millisecond), func() (bool, error) {
-		count++
-		if count == 5 {
-			return true, nil
-		}
-		return false, nil
-	})
-	assert.NoError(err)
-	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeDeadlinedIntervalTicker(100*time.Millisecond, time.Now().Add(1020*time.Millisecond)),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Range(count, 9, 11, "exceeded with a count")
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeDeadlinedIntervalTicker(20*time.Millisecond, time.Now().Add(-time.Second)),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Equal(count, 0)
-
-	count = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Millisecond)
-	defer cancel()
-	err = wait.Poll(
-		ctx,
-		wait.MakeDeadlinedIntervalTicker(20*time.Millisecond, time.Now().Add(time.Second)),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*cancelled.*")
-	assert.Range(count, 4, 6, "test is race, depending on scheduling")
 }
 
 // TestPollWithTimeout tests the polling of conditions with timeouts.
@@ -295,22 +194,7 @@ func TestPollWithTimeout(t *testing.T) {
 
 	// Tests.
 	count := 0
-	err := wait.Poll(
-		context.Background(),
-		wait.MakeExpiringIntervalTicker(20*time.Millisecond, 210*time.Millisecond),
-		func() (bool, error) {
-			count++
-			if count == 5 {
-				return true, nil
-			}
-			return false, nil
-		},
-	)
-	assert.NoError(err)
-	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.WithTimeout(context.Background(), 20*time.Millisecond, 210*time.Millisecond, func() (bool, error) {
+	err := wait.WithTimeout(context.Background(), 5*time.Millisecond, 55*time.Millisecond, func() (bool, error) {
 		count++
 		if count == 5 {
 			return true, nil
@@ -319,44 +203,6 @@ func TestPollWithTimeout(t *testing.T) {
 	})
 	assert.NoError(err)
 	assert.Equal(count, 5)
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeExpiringIntervalTicker(20*time.Millisecond, 210*time.Millisecond),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Range(count, 9, 11)
-
-	count = 0
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeExpiringIntervalTicker(20*time.Millisecond, -10*time.Millisecond),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*exceeded.*")
-	assert.Equal(count, 0)
-
-	count = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Millisecond)
-	defer cancel()
-	err = wait.Poll(
-		ctx,
-		wait.MakeExpiringIntervalTicker(20*time.Millisecond, 500*time.Millisecond),
-		func() (bool, error) {
-			count++
-			return false, nil
-		},
-	)
-	assert.ErrorMatch(err, ".*cancelled.*")
-	assert.Range(count, 4, 6, "test is race, depending on scheduling")
 }
 
 // TestPollWithJitter tests the polling of conditions in a maximum
@@ -411,7 +257,7 @@ func TestPollWithJitter(t *testing.T) {
 			return false, nil
 		},
 	)
-	assert.ErrorMatch(err, ".*exceeded.*")
+	assert.ErrorContains(err, "exceeded")
 	assert.Range(len(timestamps), 10, 25)
 
 	timestamps = []time.Time{}
@@ -423,7 +269,7 @@ func TestPollWithJitter(t *testing.T) {
 			return false, nil
 		},
 	)
-	assert.ErrorMatch(err, ".*exceeded.*")
+	assert.ErrorContains(err, "exceeded")
 	assert.Empty(timestamps)
 
 	timestamps = []time.Time{}
@@ -437,8 +283,7 @@ func TestPollWithJitter(t *testing.T) {
 			return false, nil
 		},
 	)
-	assert.ErrorMatch(err, ".*cancelled.*")
-	assert.Range(len(timestamps), 3, 7, "test is race, depending on scheduling")
+	assert.ErrorContains(err, "cancelled")
 }
 
 // TestPoll tests the polling of conditions with a user-defined ticker.
@@ -491,7 +336,7 @@ func TestPoll(t *testing.T) {
 			return false, nil
 		},
 	)
-	assert.ErrorMatch(err, ".*exceeded.*")
+	assert.ErrorContains(err, "exceeded")
 	assert.Equal(count, 1000, "exceeded with a count")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
@@ -504,7 +349,7 @@ func TestPoll(t *testing.T) {
 			return false, nil
 		},
 	)
-	assert.ErrorMatch(err, ".*cancelled.*")
+	assert.ErrorContains(err, "cancelled")
 }
 
 // TestPanic tests the handling of panics during condition checks.
@@ -521,8 +366,27 @@ func TestPanic(t *testing.T) {
 		}
 		return false, nil
 	})
-	assert.ErrorMatch(err, ".*panic.*")
+	assert.ErrorContains(err, "panic")
 	assert.Equal(count, 5)
+}
+
+//--------------------
+// HELPER
+//--------------------
+
+// mkChgTicker creates a ticker with a changing interval.
+func mkChgTicker() wait.TickerFunc {
+	interval := 5 * time.Millisecond
+	return wait.MakeGenericIntervalTicker(func(in time.Duration) (out time.Duration, ok bool) {
+		if in == 0 {
+			return interval, true
+		}
+		out = in * 2
+		if out > time.Second {
+			return 0, false
+		}
+		return out, true
+	})
 }
 
 // EOF
