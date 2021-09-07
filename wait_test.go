@@ -26,7 +26,7 @@ import (
 //--------------------
 
 // TestPolls verifies Poll() with different parameters.
-func TestChangingInterval(t *testing.T) {
+func TestPolls(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
 	tests := []struct {
 		name     string
@@ -129,17 +129,14 @@ func TestChangingInterval(t *testing.T) {
 				ctx, _ = context.WithTimeout(ctx, test.duration)
 			}
 			count := 0
-			err := wait.Poll(
-				ctx,
-				test.ticker(),
-				func() (bool, error) {
-					count++
-					if count == test.count {
-						return true, nil
-					}
-					return false, nil
-				},
-			)
+			condition := func() (bool, error) {
+				count++
+				if count == test.count {
+					return true, nil
+				}
+				return false, nil
+			}
+			err := wait.Poll(ctx, test.ticker(), condition)
 			if test.err == "" {
 				assert.NoError(err)
 				assert.Equal(count, test.count)
@@ -150,59 +147,95 @@ func TestChangingInterval(t *testing.T) {
 	}
 }
 
-// TestWithInterval verifies WithInterval().
-func TestWithInterval(t *testing.T) {
-	// Init.
+// TestConvenience verifies the diverse convenience functions for Poll().
+func TestConvenience(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Test.
-	count := 0
-	err := wait.WithInterval(context.Background(), 20*time.Millisecond, func() (bool, error) {
-		count++
-		if count == 5 {
-			return true, nil
-		}
-		return false, nil
-	})
-	assert.NoError(err)
-	assert.Equal(count, 5)
-}
-
-// TestPollWithMaxIntervals tests the polling of conditions in a maximum
-// number of intervals.
-func TestPollWithMaxInterval(t *testing.T) {
-	// Init.
-	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Tests.
-	count := 0
-	err := wait.WithMaxIntervals(context.Background(), 20*time.Millisecond, 10, func() (bool, error) {
-		count++
-		if count == 5 {
-			return true, nil
-		}
-		return false, nil
-	})
-	assert.NoError(err)
-	assert.Equal(count, 5)
-}
-
-// TestPollWithTimeout tests the polling of conditions with timeouts.
-func TestPollWithTimeout(t *testing.T) {
-	// Init.
-	assert := asserts.NewTesting(t, asserts.FailStop)
-
-	// Tests.
-	count := 0
-	err := wait.WithTimeout(context.Background(), 5*time.Millisecond, 55*time.Millisecond, func() (bool, error) {
-		count++
-		if count == 5 {
-			return true, nil
-		}
-		return false, nil
-	})
-	assert.NoError(err)
-	assert.Equal(count, 5)
+	tests := []struct {
+		name     string
+		duration time.Duration
+		poll     func(context.Context, wait.ConditionFunc) error
+		count    int
+		err      string
+	}{
+		{
+			name: "with-interval-success",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithInterval(ctx, 5*time.Millisecond, condition)
+			},
+			count: 5,
+		}, {
+			name: "with-interval-success-context-cancelled",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithInterval(ctx, 5*time.Millisecond, condition)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "with-max-intervals-success",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithMaxIntervals(ctx, 5*time.Millisecond, 10, condition)
+			},
+			count: 5,
+		}, {
+			name: "with-max-intervals-context-cancelled",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithMaxIntervals(ctx, 5*time.Millisecond, 10, condition)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "with-deadline-success",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithDeadline(ctx, 5*time.Millisecond, time.Now().Add(55*time.Millisecond), condition)
+			},
+			count: 5,
+		}, {
+			name: "with-deadline-context-cancelled",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithDeadline(ctx, 5*time.Millisecond, time.Now().Add(55*time.Millisecond), condition)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		}, {
+			name: "with-timeout-success",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithTimeout(ctx, 5*time.Millisecond, 55*time.Millisecond, condition)
+			},
+			count: 5,
+		}, {
+			name: "with-timeout-context-cancelled",
+			poll: func(ctx context.Context, condition wait.ConditionFunc) error {
+				return wait.WithTimeout(ctx, 5*time.Millisecond, 55*time.Millisecond, condition)
+			},
+			duration: 50 * time.Millisecond,
+			err:      "context has been cancelled with error",
+		},
+	}
+	// Run tests.
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.SetFailable(t)
+			ctx := context.Background()
+			if test.duration != 0 {
+				ctx, _ = context.WithTimeout(ctx, test.duration)
+			}
+			count := 0
+			condition := func() (bool, error) {
+				count++
+				if count == test.count {
+					return true, nil
+				}
+				return false, nil
+			}
+			err := test.poll(ctx, condition)
+			if test.err == "" {
+				assert.NoError(err)
+				assert.Equal(count, test.count)
+			} else {
+				assert.ErrorContains(err, test.err)
+			}
+		})
+	}
 }
 
 // TestPollWithJitter tests the polling of conditions in a maximum
@@ -286,8 +319,8 @@ func TestPollWithJitter(t *testing.T) {
 	assert.ErrorContains(err, "cancelled")
 }
 
-// TestPoll tests the polling of conditions with a user-defined ticker.
-func TestPoll(t *testing.T) {
+// TestUserDefinedTicker tests the polling of conditions with a user-defined ticker.
+func TestUserDefinedTicker(t *testing.T) {
 	// Init.
 	assert := asserts.NewTesting(t, asserts.FailStop)
 	ticker := func(ctx context.Context) <-chan struct{} {
