@@ -42,8 +42,10 @@
 //
 //     // Tick every second for maximal 30 seconds.
 //     ticker := wait.MakeExpiringIntervalTicker(time.Second, 30*time.Second),
+//
+//     // Check for existence of a file.
 //     condition := func() (bool, error) {
-//         _, err := os.Stat(myFile)
+//         _, err := os.Stat("myfile.txt")
 //         if err != nil {
 //             if os.IsNotExist(err) {
 //                 return false, nil
@@ -54,6 +56,7 @@
 //         return true, nil
 //     }
 //
+//     // And now poll.
 //     wait.Poll(ctx, ticker, condition)
 //
 // From external the polling can be stopped by cancelling the context.

@@ -30,8 +30,10 @@ A simple check for an existing file by polling every second for maximal 30 secon
 ```go
 // Tick every second for maximal 30 seconds.
 ticker := wait.MakeExpiringIntervalTicker(time.Second, 30*time.Second),
+
+// Check for existence of a file.
 contition := func() (bool, error) {
-    _, err := os.Stat(myFile)
+    _, err := os.Stat("myfile.txt")
     if err != nil {
         if os.IsNotExist(err) {
             return false, nil
@@ -42,6 +44,7 @@ contition := func() (bool, error) {
     return true, nil
 }
 
+// And now poll.
 wait.Poll(ctx, ticker, condition)
 ```
 
