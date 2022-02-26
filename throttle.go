@@ -13,6 +13,7 @@ package wait // import "tideland.dev/go/wait"
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -23,10 +24,8 @@ import (
 //--------------------
 
 const (
-	InfinityLimit    = math.MaxInt64
-	InfinityDuration = time.Duration(math.MaxInt64)
-
-	eventLoad = 1
+	InfiniteLimit    = math.MaxFloat64
+	InfiniteDuration = time.Duration(math.MaxInt64)
 )
 
 //--------------------
@@ -34,7 +33,26 @@ const (
 //--------------------
 
 // Limit defines the number of allowed job starts per second by the throttle.
-type Limit int64
+type Limit float64
+
+// durationForTokens calculates the duration for a given number of tokens in
+// a throttle with limit tokens per second.
+func (limit Limit) tokensToDuration(tokens float64) time.Duration {
+	if limit <= 0 {
+		return InfiniteDuration
+	}
+	seconds := tokens / float64(limit)
+	return time.Duration(float64(time.Second) * seconds)
+}
+
+// durationToTokens calculates the number of tokens for a given duration in
+// a throttle with limit tokens per second.
+func (limit Limit) durationToTokens(duration time.Duration) float64 {
+	if limit <= 0 {
+		return 0
+	}
+	return duration.Seconds() * float64(limit)
+}
 
 //--------------------
 // THROTTLE
@@ -45,101 +63,233 @@ type Event func() error
 
 // Throttle controls the maximum number of processed events per second.
 type Throttle struct {
-	mu            sync.RWMutex
-	limit         Limit
-	retryInterval time.Duration
-	factor        float64
-	limitedLoad   int64
-	currentLoad   int64
-	eventDuration time.Duration
+	mu         sync.RWMutex
+	limit      Limit
+	burst      int
+	tokens     float64
+	lastUpdate time.Time
+	lastEvent  time.Time
 }
 
 // NewThrottle creates a new throttle allowing a limited event processing per second.
-func NewThrottle(limit Limit) *Throttle {
-	if limit < 1 {
-		limit = 1
-	}
-	eventDuration := time.Second / time.Duration(limit)
+func NewThrottle(limit Limit, burst int) *Throttle {
 	return &Throttle{
-		limit:         limit,
-		retryInterval: eventDuration,
-		factor:        0.1,
-		limitedLoad:   int64(limit),
-		eventDuration: eventDuration,
+		limit: limit,
+		burst: burst,
 	}
 }
 
+// Limit returns the current limit of the throttle.
+func (t *Throttle) Limit() Limit {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.limit
+}
+
+// Burst returns the current burst of the throttle.
+func (t *Throttle) Burst() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.burst
+}
+
 // Process processes an event if the throttle has capacity.
-func (t *Throttle) Process(ctx context.Context, event Event) error {
+func (t *Throttle) Process(ctx context.Context, events ...Event) error {
+	// Check burst.
+	t.mu.RLock()
+	limit := t.limit
+	burst := t.burst
+	t.mu.RUnlock()
+	if len(events) > burst && limit != InfiniteLimit {
+		return fmt.Errorf("wait: processing %d events exceed(s) throttle burst size %d", len(events), burst)
+	}
 	// Check if the context is already cancelled.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("wait: processing %d event(s) throttle context already one: %v", len(events), ctx.Err())
 	default:
 	}
 	// Calculate a possible timeout.
 	now := time.Now()
-	timeout := InfinityDuration
+	maxDuration := InfiniteDuration
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout = deadline.Sub(now)
+		maxDuration = deadline.Sub(now)
 	}
-	// Wait until allowed.
-	if err := WithJitter(ctx, t.retryInterval, 0.1, timeout, t.isAllowed); err != nil {
-		return err
+	// Create processor.
+	c := newClock(t, len(events), now, maxDuration)
+	if !c.ok {
+		return fmt.Errorf("wait: processing %d event(s) would exceed throttle context deadline", len(events))
 	}
-	return t.process(event)
+	// Delay as long as needed.
+	delay := c.delayFrom(now)
+	if delay > 0 {
+		t := time.NewTimer(delay)
+		defer t.Stop()
+		select {
+		case <-t.C:
+			// Continue.
+			break
+		case <-ctx.Done():
+			// Context was canceled.
+			c.cancelAt(time.Now())
+			return fmt.Errorf("wait: processing %d event(s) throttle context timed out: %v", len(events), ctx.Err())
+		}
+	}
+	// Process event(s).
+	for n, event := range events {
+		if err := event(); err != nil {
+			return fmt.Errorf("wait: processing event %d returned error: %v", n, err)
+		}
+	}
+	return nil
 }
 
-// LimitedLoad allows to retrieve the limited usage of the throttle in events per interval.
-func (t *Throttle) LimitedLoad() int64 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.limitedLoad
+//--------------------
+// CLOCK
+//--------------------
+
+// clock is responsible for the controlling of limiit and tokens of a throttle.
+type clock struct {
+	throttle *Throttle
+	limit    Limit
+	ok       bool
+	tokens   int
+	act      time.Time
 }
 
-// CurrentLoad allows to retrieve the current usage of the throttle in events per interval.
-func (t *Throttle) CurrentLoad() int64 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.currentLoad
-}
-
-// isAllowed checks if the throttle allows the event processing. It implements the
-// ConditionFunc for waiting functions.
-func (t *Throttle) isAllowed() (bool, error) {
-	t.mu.RLock()
-	limitedLoad := t.limitedLoad
-	currentLoad := t.currentLoad
-	t.mu.RUnlock()
-	return currentLoad < limitedLoad, nil
-}
-
-// process executes the event and adjusts the current load during execution.
-func (t *Throttle) process(event Event) error {
-	// Before processing.
-	t.mu.Lock()
-	t.currentLoad += eventLoad
-	eventDuration := t.eventDuration
-	t.mu.Unlock()
-
-	// Processing.
-	before := time.Now()
-	err := event()
-	after := time.Now()
-	duration := after.Sub(before)
-
-	if duration < eventDuration {
-		// Slow down a bit.
-		slowDown := time.Duration(eventDuration.Nanoseconds() - duration.Nanoseconds())
-		time.Sleep(slowDown)
+// newClock creates and initializes a clock for the given throttle and
+// the processing of one or more events.
+func newClock(throttle *Throttle, n int, now time.Time, maxReserve time.Duration) *clock {
+	c := &clock{
+		throttle: throttle,
 	}
 
-	// After processing.
-	t.mu.Lock()
-	t.currentLoad -= eventLoad
-	t.mu.Unlock()
+	c.throttle.mu.Lock()
+	defer c.throttle.mu.Unlock()
 
-	return err
+	if c.throttle.limit == InfiniteLimit {
+		c.ok = true
+		c.tokens = n
+		c.act = now
+
+		return c
+	} else if c.throttle.limit == 0 {
+		var ok bool
+		if c.throttle.burst >= n {
+			ok = true
+			c.throttle.burst -= n // Reduce throttle burst.
+		}
+		c.ok = ok
+		c.tokens = c.throttle.burst
+		c.act = now
+		return c
+	}
+
+	now, lastUpdate, tokens := c.advanceTokens(now)
+
+	// How many tokens remain after this request?
+	tokens -= float64(n)
+
+	// How long do we have to wait?
+	var waitDuration time.Duration
+	if tokens < 0 {
+		waitDuration = c.throttle.limit.tokensToDuration(-tokens)
+	}
+
+	// Decide if processing is okay.
+	ok := n <= c.throttle.burst && waitDuration <= maxReserve
+
+	c.ok = ok
+	c.limit = c.throttle.limit
+
+	if ok {
+		c.tokens = n
+		c.act = now.Add(waitDuration)
+	}
+
+	// Update throttle state.
+	if ok {
+		c.throttle.lastUpdate = now
+		c.throttle.tokens = tokens
+		c.throttle.lastEvent = c.act
+	} else {
+		c.throttle.lastUpdate = lastUpdate
+	}
+
+	return c
+}
+
+// advanceTokens calculates and returns an updated state for the throttle based on the given timestamp
+// and without changing it. Due to access of fields the caller must have locked the throttle.
+func (c *clock) advanceTokens(now time.Time) (newNow time.Time, newLastUpdate time.Time, newTokens float64) {
+	// Check last update.
+	lastUpdate := c.throttle.lastUpdate
+	if now.Before(lastUpdate) {
+		lastUpdate = now
+	}
+	// Calculate number of tokens.
+	elapsed := now.Sub(lastUpdate)
+	delta := c.throttle.limit.durationToTokens(elapsed)
+	tokens := c.throttle.tokens + delta
+	if burst := float64(c.throttle.burst); tokens > burst {
+		tokens = burst
+	}
+	return now, lastUpdate, tokens
+}
+
+// delayFrom returns the duration for which the processing must wait before processing
+// the event(s). When zero there's no need to wait while InfiniteDuration means that
+// prossibly the tokens won't be available before timeout.
+func (c *clock) delayFrom(now time.Time) time.Duration {
+	if !c.ok {
+		return InfiniteDuration
+	}
+	delay := c.act.Sub(now)
+	if delay < 0 {
+		return 0
+	}
+	return delay
+}
+
+// cancelAt is called in case of a timeout and so the event(s) are not processed. So
+// the processor can reverse the effects on the throttle to allow other callers to
+// process their event(s).
+func (c *clock) cancelAt(now time.Time) {
+	if !c.ok {
+		return
+	}
+
+	c.throttle.mu.Lock()
+	defer c.throttle.mu.Unlock()
+
+	if c.throttle.limit == InfiniteLimit || c.tokens == 0 || c.act.Before(now) {
+		return
+	}
+
+	// Calculate the tokens to restore in throttle.
+	restoreTokens := float64(c.tokens) - c.limit.durationToTokens(c.throttle.lastEvent.Sub(c.act))
+	if restoreTokens <= 0 {
+		return
+	}
+
+	// Advance tokens to now.
+	now, _, tokens := c.advanceTokens(now)
+
+	// Now calculates the new number of tokens.
+	tokens += restoreTokens
+	if burst := float64(c.throttle.burst); tokens > burst {
+		tokens = burst
+	}
+
+	// Finally update the throttle state.
+	c.throttle.lastUpdate = now
+	c.throttle.tokens = tokens
+	if c.act == c.throttle.lastEvent {
+		prevEvent := c.act.Add(c.limit.tokensToDuration(float64(-c.tokens)))
+		if !prevEvent.Before(now) {
+			c.throttle.lastEvent = prevEvent
+		}
+	}
 }
 
 // EOF

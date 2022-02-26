@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"tideland.dev/go/audit/asserts"
-	"tideland.dev/go/audit/generators"
 
 	"tideland.dev/go/wait"
 )
@@ -30,26 +29,24 @@ import (
 // TestThrottleOK verifies the positiv limitation of parallel processed events.
 func TestThrottleOK(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
-	gen := generators.New(generators.FixedRand())
 	runs := 110
+	var rushes int64
 	event := func() error {
-		gen.SleepOneOf(10*time.Millisecond, 20*time.Millisecond, 50*time.Millisecond)
+		atomic.AddInt64(&rushes, 1)
 		return nil
 	}
-	throttle := wait.NewThrottle(20)
-	var rushes int64
+	throttle := wait.NewThrottle(20.0, 1)
 	rushing := func() {
 		rush := func() {
 			ctx := context.Background()
 			throttle.Process(ctx, event)
-			atomic.AddInt64(&rushes, 1)
 		}
 		for i := 0; i < runs; i++ {
 			go rush()
 		}
 	}
 	// All preparations done, now start rushing and check the load.
-	before := time.Now()
+	start := time.Now()
 
 	go rushing()
 
@@ -60,21 +57,22 @@ func TestThrottleOK(t *testing.T) {
 		<-ticker.C
 
 		rs := atomic.LoadInt64(&rushes)
-		ll := throttle.LimitedLoad()
-		cl := throttle.CurrentLoad()
+		l := throttle.Limit()
+		b := throttle.Burst()
 
-		assert.True(cl >= 0 && cl < 20)
-		assert.Logf("RUN: %d / LL: %d / CL: %d", rs, ll, cl)
+		assert.Equal(l, wait.Limit(20.0))
+		assert.Equal(b, 1)
+		assert.Logf("RUN: %d / LIMIT: %.2f / BURST: %d", rs, l, b)
 
 		if rs >= int64(runs) {
 			break
 		}
 	}
 
-	after := time.Now()
-	distance := after.Sub(before)
+	duration := time.Now().Sub(start)
 
-	assert.True(distance.Seconds() > 5.0)
+	assert.Equal(rushes, int64(runs))
+	assert.True(duration.Seconds() >= 5.0, "duration is", duration.String())
 }
 
 // EOF
