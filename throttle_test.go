@@ -13,6 +13,7 @@ package wait_test // import "tideland.dev/go/wait"
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,102 +27,80 @@ import (
 // TESTS
 //--------------------
 
-// TestThrottleOK verifies the positiv throttling of parallel processed events.
-func TestThrottleOK(t *testing.T) {
+// TestThrottle verifies the throttling of parallel processed events.
+func TestThrottle(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
-	runs := 110
-	var rushes int64
-	event := func() error {
-		atomic.AddInt64(&rushes, 1)
-		return nil
+	tests := []struct {
+		name   string
+		runs   int
+		limit  wait.Limit
+		burst  int
+		events int
+		err    string
+	}{
+		{
+			name:   "single burst loop",
+			runs:   110,
+			limit:  20.0,
+			burst:  1,
+			events: 1,
+		},
 	}
-	throttle := wait.NewThrottle(20.0, 1)
-	rushing := func() {
-		rush := func() {
-			ctx := context.Background()
-			throttle.Process(ctx, event)
-		}
-		for i := 0; i < runs; i++ {
-			go rush()
-		}
+	// Run tests.
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.SetFailable(t)
+			// Preparings.
+			var rushes int64
+			event := func() error {
+				atomic.AddInt64(&rushes, 1)
+				return nil
+			}
+			throttle := wait.NewThrottle(test.limit, test.burst)
+			rushing := func() {
+				rush := func() {
+					ctx := context.Background()
+					events := []wait.Event{}
+					for j := 0; j < test.events; j++ {
+						events = append(events, event)
+					}
+					throttle.Process(ctx, events...)
+				}
+				for i := 0; i < test.runs/test.events; i++ {
+					go rush()
+				}
+			}
+			// Start rushing.
+			start := time.Now()
+
+			go rushing()
+
+			ticker := time.NewTicker(5 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				<-ticker.C
+
+				rs := atomic.LoadInt64(&rushes)
+				l := throttle.Limit()
+				b := throttle.Burst()
+
+				assert.Equal(l, wait.Limit(test.limit))
+				assert.Equal(b, test.burst)
+
+				if rs >= int64(test.runs) {
+					break
+				}
+			}
+
+			duration := time.Now().Sub(start)
+			seconds := float64(test.runs) / float64(test.limit)
+			info := fmt.Sprintf("duration is %.4f, not %.4fs (+/- 0.25s)", duration.Seconds(), seconds)
+
+			assert.Equal(rushes, int64(test.runs))
+			assert.About(duration.Seconds(), seconds, 0.25, info)
+		})
 	}
-	// All preparations done, now start rushing and check the load.
-	start := time.Now()
-
-	go rushing()
-
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-
-		rs := atomic.LoadInt64(&rushes)
-		l := throttle.Limit()
-		b := throttle.Burst()
-
-		assert.Equal(l, wait.Limit(20.0))
-		assert.Equal(b, 1)
-		assert.Logf("RUN: %d / LIMIT: %.2f / BURST: %d", rs, l, b)
-
-		if rs >= int64(runs) {
-			break
-		}
-	}
-
-	duration := time.Now().Sub(start)
-
-	assert.Equal(rushes, int64(runs))
-	assert.True(duration.Seconds() >= 5.0, "duration is", duration.String())
-}
-
-// TestThrottleBurstOK verifies the positiv throttling of parallel processed events with burst.
-func TestThrottleBurstOK(t *testing.T) {
-	assert := asserts.NewTesting(t, asserts.FailStop)
-	runs := 110
-	var rushes int64
-	event := func() error {
-		atomic.AddInt64(&rushes, 1)
-		return nil
-	}
-	throttle := wait.NewThrottle(20.0, 5)
-	rushing := func() {
-		rush := func() {
-			ctx := context.Background()
-			throttle.Process(ctx, event, event, event, event, event)
-		}
-		for i := 0; i < runs/5; i++ {
-			go rush()
-		}
-	}
-	// All preparations done, now start rushing and check the load.
-	start := time.Now()
-
-	go rushing()
-
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-
-		rs := atomic.LoadInt64(&rushes)
-		l := throttle.Limit()
-		b := throttle.Burst()
-
-		assert.Equal(l, wait.Limit(20.0))
-		assert.Equal(b, 5)
-		assert.Logf("RUN: %d / LIMIT: %.2f / BURST: %d", rs, l, b)
-
-		if rs >= int64(runs) {
-			break
-		}
-	}
-
-	duration := time.Now().Sub(start)
-
-	assert.Equal(rushes, int64(runs))
-	assert.True(duration.Seconds() >= 5.0, "duration is", duration.String())
 }
 
 // EOF
