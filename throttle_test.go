@@ -31,29 +31,66 @@ import (
 func TestThrottle(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
 	tests := []struct {
-		name   string
-		runs   int
-		limit  wait.Limit
-		burst  int
-		events int
-		err    string
+		name     string
+		events   int
+		perCall  int
+		limit    wait.Limit
+		burst    int
+		cancel   bool
+		deadline time.Duration
+		err      string
 	}{
 		{
-			name:   "single burst loop",
-			runs:   110,
-			limit:  20.0,
-			burst:  1,
-			events: 1,
+			name:    "single burst and single event",
+			events:  55,
+			perCall: 1,
+			limit:   20.0,
+			burst:   1,
+		},
+		{
+			name:    "larger burst and single event",
+			events:  55,
+			perCall: 1,
+			limit:   20.0,
+			burst:   5,
+		},
+		{
+			name:    "single burst and multiple events",
+			events:  55,
+			perCall: 5,
+			limit:   20.0,
+			burst:   1,
+			err:     "event(s) exceeds throttle burst size 1",
+		},
+		{
+			name:    "cancel before processing",
+			events:  55,
+			perCall: 1,
+			limit:   20.0,
+			burst:   1,
+			cancel:  true,
+			err:     "event(s) throttle context already done",
+		},
+		{
+			name:     "exceeding deadline",
+			events:   55,
+			perCall:  1,
+			limit:    20.0,
+			burst:    1,
+			deadline: time.Millisecond,
+			err:      "event(s) would exceed throttle context deadline",
 		},
 	}
 	// Run tests.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			assert.SetFailable(t)
+			assert.Logf("running <<%s>>", test.name)
 			// Preparings.
-			var rushes int64
+			var rushesDone int64
+			var errorsReturned int64
+			rushes := test.events / test.perCall
 			event := func() error {
-				atomic.AddInt64(&rushes, 1)
 				return nil
 			}
 			throttle := wait.NewThrottle(test.limit, test.burst)
@@ -61,12 +98,29 @@ func TestThrottle(t *testing.T) {
 				rush := func() {
 					ctx := context.Background()
 					events := []wait.Event{}
-					for j := 0; j < test.events; j++ {
+					for j := 0; j < test.perCall; j++ {
 						events = append(events, event)
 					}
-					throttle.Process(ctx, events...)
+					if test.cancel {
+						// Cancel context before used.
+						var cancel func()
+						ctx, cancel = context.WithCancel(ctx)
+						cancel()
+					}
+					if test.deadline > 0 {
+						// Set context deadline.
+						var cancel func()
+						ctx, cancel = context.WithTimeout(ctx, test.deadline)
+						defer cancel()
+					}
+					err := throttle.Process(ctx, events...)
+					if test.err != "" {
+						atomic.AddInt64(&errorsReturned, 1)
+						assert.ErrorContains(err, test.err)
+					}
+					atomic.AddInt64(&rushesDone, 1)
 				}
-				for i := 0; i < test.runs/test.events; i++ {
+				for i := 0; i < rushes; i++ {
 					go rush()
 				}
 			}
@@ -81,24 +135,29 @@ func TestThrottle(t *testing.T) {
 			for {
 				<-ticker.C
 
-				rs := atomic.LoadInt64(&rushes)
 				l := throttle.Limit()
 				b := throttle.Burst()
 
 				assert.Equal(l, wait.Limit(test.limit))
 				assert.Equal(b, test.burst)
 
-				if rs >= int64(test.runs) {
+				if atomic.LoadInt64(&rushesDone) == int64(rushes) {
 					break
 				}
 			}
 
 			duration := time.Now().Sub(start)
-			seconds := float64(test.runs) / float64(test.limit)
+			seconds := float64(test.events) / float64(test.limit)
 			info := fmt.Sprintf("duration is %.4f, not %.4fs (+/- 0.25s)", duration.Seconds(), seconds)
 
-			assert.Equal(rushes, int64(test.runs))
-			assert.About(duration.Seconds(), seconds, 0.25, info)
+			if er := atomic.LoadInt64(&errorsReturned); er > 0 {
+				// In case of errors look at their count.
+				assert.True(er <= int64(rushes))
+			} else {
+				// Otherwise look at the count of the rushes and the time.
+				assert.Equal(atomic.LoadInt64(&rushesDone), int64(rushes))
+				assert.About(duration.Seconds(), seconds, 0.25, info)
+			}
 		})
 	}
 }

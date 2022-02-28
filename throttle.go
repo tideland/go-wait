@@ -101,12 +101,12 @@ func (t *Throttle) Process(ctx context.Context, events ...Event) error {
 	burst := t.burst
 	t.mu.RUnlock()
 	if len(events) > burst && limit != InfiniteLimit {
-		return fmt.Errorf("wait: processing %d events exceed(s) throttle burst size %d", len(events), burst)
+		return fmt.Errorf("wait: processing %d event(s) exceeds throttle burst size %d", len(events), burst)
 	}
 	// Check if the context is already cancelled.
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("wait: processing %d event(s) throttle context already one: %v", len(events), ctx.Err())
+		return fmt.Errorf("wait: processing %d event(s) throttle context already done: %v", len(events), ctx.Err())
 	default:
 	}
 	// Calculate a possible timeout.
