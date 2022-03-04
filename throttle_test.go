@@ -13,6 +13,7 @@ package wait_test // import "tideland.dev/go/wait"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -31,31 +32,32 @@ import (
 func TestThrottle(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
 	tests := []struct {
-		name     string
-		events   int
-		perCall  int
-		limit    wait.Limit
-		burst    int
-		cancel   bool
-		deadline time.Duration
-		err      string
+		name    string
+		events  int
+		perCall int
+		limit   wait.Limit
+		burst   int
+		fail    bool
+		cancel  bool
+		timeout time.Duration
+		err     string
 	}{
 		{
-			name:    "single burst and single event",
+			name:    "single-burst-single-event",
 			events:  55,
 			perCall: 1,
 			limit:   20.0,
 			burst:   1,
 		},
 		{
-			name:    "larger burst and single event",
+			name:    "larger-burst-single-event",
 			events:  55,
 			perCall: 1,
 			limit:   20.0,
 			burst:   5,
 		},
 		{
-			name:    "single burst and multiple events",
+			name:    "single-burst-multiple-events",
 			events:  55,
 			perCall: 5,
 			limit:   20.0,
@@ -63,7 +65,7 @@ func TestThrottle(t *testing.T) {
 			err:     "event(s) exceeds throttle burst size 1",
 		},
 		{
-			name:    "cancel before processing",
+			name:    "cancel-before-processing",
 			events:  55,
 			perCall: 1,
 			limit:   20.0,
@@ -72,25 +74,46 @@ func TestThrottle(t *testing.T) {
 			err:     "event(s) throttle context already done",
 		},
 		{
-			name:     "exceeding deadline",
-			events:   55,
-			perCall:  1,
-			limit:    20.0,
-			burst:    1,
-			deadline: time.Millisecond,
-			err:      "event(s) would exceed throttle context deadline",
+			name:    "exceeding-context-timeout",
+			events:  55,
+			perCall: 1,
+			limit:   20.0,
+			burst:   1,
+			timeout: time.Millisecond,
+			err:     "event(s) would exceed throttle context deadline",
+		},
+		{
+			name:    "exceeding-event-timeout",
+			events:  10,
+			perCall: 1,
+			limit:   1,
+			burst:   1,
+			cancel:  true,
+			timeout: time.Millisecond,
+			err:     "event(s) throttle context timed out or cancelled",
+		},
+		{
+			name:    "error-in-event",
+			events:  5,
+			perCall: 1,
+			limit:   5,
+			burst:   1,
+			fail:    true,
+			err:     "processing event 0 returned error: ouch",
 		},
 	}
 	// Run tests.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			assert.SetFailable(t)
-			assert.Logf("running <<%s>>", test.name)
 			// Preparings.
 			var rushesDone int64
 			var errorsReturned int64
 			rushes := test.events / test.perCall
 			event := func() error {
+				if test.fail {
+					return errors.New("ouch")
+				}
 				return nil
 			}
 			throttle := wait.NewThrottle(test.limit, test.burst)
@@ -101,21 +124,29 @@ func TestThrottle(t *testing.T) {
 					for j := 0; j < test.perCall; j++ {
 						events = append(events, event)
 					}
-					if test.cancel {
-						// Cancel context before used.
-						var cancel func()
+					var cancel func()
+					switch {
+					case test.cancel && test.timeout == 0:
+						// Cancel context before it is used.
 						ctx, cancel = context.WithCancel(ctx)
 						cancel()
-					}
-					if test.deadline > 0 {
-						// Set context deadline.
-						var cancel func()
-						ctx, cancel = context.WithTimeout(ctx, test.deadline)
+						cancel = nil
+					case !test.cancel && test.timeout > 0:
+						// Set context with a timeout.
+						ctx, cancel = context.WithTimeout(ctx, test.timeout)
 						defer cancel()
+					case test.cancel && test.timeout > 0:
+						// Cancel the context while event is waiting.
+						ctx, cancel = context.WithCancel(ctx)
+						go func() {
+							time.Sleep(test.timeout)
+							cancel()
+						}()
 					}
 					err := throttle.Process(ctx, events...)
-					if test.err != "" {
+					if test.err != "" && err != nil {
 						atomic.AddInt64(&errorsReturned, 1)
+						// assert.Logf("processing error: %v", err.Error())
 						assert.ErrorContains(err, test.err)
 					}
 					atomic.AddInt64(&rushesDone, 1)

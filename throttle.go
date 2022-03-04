@@ -115,7 +115,7 @@ func (t *Throttle) Process(ctx context.Context, events ...Event) error {
 	if deadline, ok := ctx.Deadline(); ok {
 		maxDuration = deadline.Sub(now)
 	}
-	// Create processor.
+	// Create clock.
 	c := newClock(t, len(events), now, maxDuration)
 	if !c.ok {
 		return fmt.Errorf("wait: processing %d event(s) would exceed throttle context deadline", len(events))
@@ -132,7 +132,7 @@ func (t *Throttle) Process(ctx context.Context, events ...Event) error {
 		case <-ctx.Done():
 			// Context was canceled.
 			c.cancelAt(time.Now())
-			return fmt.Errorf("wait: processing %d event(s) throttle context timed out: %v", len(events), ctx.Err())
+			return fmt.Errorf("wait: processing %d event(s) throttle context timed out or cancelled: %v", len(events), ctx.Err())
 		}
 	}
 	// Process event(s).

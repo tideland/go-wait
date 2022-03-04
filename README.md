@@ -21,9 +21,15 @@ for the polling can be generated for
 
 Own tickers or changing intervals can be implemented too.
 
+Another component of the package is the Throttle, others would call it limiter. It allows the limited processing
+of events per second. These events are simple closures and you can define how many can be processed per event in
+general and in one call.
+
 I hope you like it. ;)
 
 ## Examples
+
+### Polling
 
 A simple check for an existing file by polling every second for maximal 30 seconds.
 
@@ -46,6 +52,31 @@ contition := func() (bool, error) {
 
 // And now poll.
 wait.Poll(ctx, ticker, condition)
+```
+
+### Throttling
+
+A throttled wrapper of a `http.Handler`.
+
+```go
+type ThrottledHandler struct {
+    throttle *wait.Throttle
+    handler  http.Handler
+}
+
+func NewThrottledHandler(limit wait.Limit, handler http.Handler) http.Handler {
+    return &ThrottledHandler{
+        throttle: wait.NewThrottle(limit, 1),
+		handler:  handler,
+    }
+}
+
+func (h *ThrottledHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    evt := func() {
+        h.ServeHTTP(w, r)
+    }
+    h.throttle.Process(context.Background(), evt)
+}
 ```
 
 ## Contributors
