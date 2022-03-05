@@ -15,10 +15,10 @@ function for testing has to be defined, different tickers for the polling can be
 - simple constant intervals,
 - a maximum number of constant intervals,
 - a constant number of intervals with a deadline,
-- c onstant number of intervals with a timeout, and
+- a onstant number of intervals with a timeout, and
 - jittering intervals.
 
-Own tickers or changing intervals can be implemented too.
+Own tickers, e.g. with changing intervals, can be implemented too.
 
 Another component of the package is the throttle, others would call it limiter. It allows the limited processing
 of events per second. Events are closures or functions with a defined signature. Depending on the burst size of
