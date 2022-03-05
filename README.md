@@ -9,9 +9,8 @@
 
 ## Description
 
-**Tideland Go Wait** provides provides a flexible and controlled waiting for wanted
-conditions by polling. The function for testing has to be defined, different tickers
-for the polling can be generated for
+**Tideland Go Wait** provides provides a flexible and controlled waiting for wanted conditions by polling. The
+function for testing has to be defined, different tickers for the polling can be generated for
 
 - simple constant intervals,
 - a maximum number of constant intervals,
@@ -67,14 +66,14 @@ type ThrottledHandler struct {
 func NewThrottledHandler(limit wait.Limit, handler http.Handler) http.Handler {
     return &ThrottledHandler{
         throttle: wait.NewThrottle(limit, 1),
-		handler:  handler,
+        handler:  handler,
     }
 }
 
 func (h *ThrottledHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     evt := func() error {
         h.ServeHTTP(w, r)
-		return nil
+        return nil
     }
     h.throttle.Process(context.Background(), evt)
 }

@@ -65,6 +65,13 @@ func TestThrottle(t *testing.T) {
 			err:     "event(s) exceeds throttle burst size 1",
 		},
 		{
+			name:    "infinite-limit-multiple-events",
+			events:  55,
+			perCall: 5,
+			limit:   wait.InfiniteLimit,
+			burst:   1,
+		},
+		{
 			name:    "cancel-before-processing",
 			events:  55,
 			perCall: 1,
@@ -144,9 +151,8 @@ func TestThrottle(t *testing.T) {
 						}()
 					}
 					err := throttle.Process(ctx, events...)
-					if test.err != "" && err != nil {
+					if err != nil {
 						atomic.AddInt64(&errorsReturned, 1)
-						// assert.Logf("processing error: %v", err.Error())
 						assert.ErrorContains(err, test.err)
 					}
 					atomic.AddInt64(&rushesDone, 1)

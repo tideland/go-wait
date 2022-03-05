@@ -61,17 +61,22 @@ func (limit Limit) durationToTokens(duration time.Duration) float64 {
 // Event wraps the event to be processed inside a function executed by a throttle.
 type Event func() error
 
-// Throttle controls the maximum number of processed events per second.
+// Throttle controls the maximum number of events processed seconds per second. Here
+// it internally uses a token bucket like described at https://en.wikipedia.org/wiki/Token_bucket.
+// A throttle is created with the limit of allowed events per second and an additional
+// burst size. A higher burst size allows to process more than event with the Process()
+// method in one call.
 type Throttle struct {
 	mu         sync.RWMutex
 	limit      Limit
 	burst      int
-	tokens     float64
+	bucket     float64
 	lastUpdate time.Time
 	lastEvent  time.Time
 }
 
-// NewThrottle creates a new throttle allowing a limited event processing per second.
+// NewThrottle creates a new throttle with a limit of allowed events to process per
+// second and a burst size for a possible number of events per call.
 func NewThrottle(limit Limit, burst int) *Throttle {
 	return &Throttle{
 		limit: limit,
@@ -93,7 +98,11 @@ func (t *Throttle) Burst() int {
 	return t.burst
 }
 
-// Process processes an event if the throttle has capacity.
+// Process processes one or more events in a given context. If the limit is
+// not infinite and the number of events is higher than the burst size or if
+// the number of events is too high for the maximum duration, then the call
+// will be declined. Also waiting can be too long of the context timeout is
+// reached earlier.
 func (t *Throttle) Process(ctx context.Context, events ...Event) error {
 	// Check burst.
 	t.mu.RLock()
@@ -210,7 +219,7 @@ func newClock(throttle *Throttle, n int, now time.Time, maxReserve time.Duration
 	// Update throttle state.
 	if ok {
 		c.throttle.lastUpdate = now
-		c.throttle.tokens = tokens
+		c.throttle.bucket = tokens
 		c.throttle.lastEvent = c.act
 	} else {
 		c.throttle.lastUpdate = lastUpdate
@@ -230,7 +239,7 @@ func (c *clock) advanceTokens(now time.Time) (newNow time.Time, newLastUpdate ti
 	// Calculate number of tokens.
 	elapsed := now.Sub(lastUpdate)
 	delta := c.throttle.limit.durationToTokens(elapsed)
-	tokens := c.throttle.tokens + delta
+	tokens := c.throttle.bucket + delta
 	if burst := float64(c.throttle.burst); tokens > burst {
 		tokens = burst
 	}
@@ -283,7 +292,7 @@ func (c *clock) cancelAt(now time.Time) {
 
 	// Finally update the throttle state.
 	c.throttle.lastUpdate = now
-	c.throttle.tokens = tokens
+	c.throttle.bucket = tokens
 	if c.act == c.throttle.lastEvent {
 		prevEvent := c.act.Add(c.limit.tokensToDuration(float64(-c.tokens)))
 		if !prevEvent.Before(now) {
