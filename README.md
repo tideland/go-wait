@@ -9,21 +9,26 @@
 
 ## Description
 
-**Tideland Go Wait** provides provides a flexible and controlled waiting for wanted
-conditions by polling. The function for testing has to be defined, different tickers
-for the polling can be generated for
+**Tideland Go Wait** provides provides a flexible and controlled waiting for wanted conditions by polling. The
+function for testing has to be defined, different tickers for the polling can be generated for
 
 - simple constant intervals,
 - a maximum number of constant intervals,
 - a constant number of intervals with a deadline,
-- c onstant number of intervals with a timeout, and
+- a onstant number of intervals with a timeout, and
 - jittering intervals.
 
-Own tickers or changing intervals can be implemented too.
+Own tickers, e.g. with changing intervals, can be implemented too.
+
+Another component of the package is the throttle, others would call it limiter. It allows the limited processing
+of events per second. Events are closures or functions with a defined signature. Depending on the burst size of
+the throttle multiple events can be processed with one call.
 
 I hope you like it. ;)
 
 ## Examples
+
+### Polling
 
 A simple check for an existing file by polling every second for maximal 30 seconds.
 
@@ -46,6 +51,32 @@ contition := func() (bool, error) {
 
 // And now poll.
 wait.Poll(ctx, ticker, condition)
+```
+
+### Throttling
+
+A throttled wrapper of a `http.Handler`.
+
+```go
+type ThrottledHandler struct {
+    throttle *wait.Throttle
+    handler  http.Handler
+}
+
+func NewThrottledHandler(limit wait.Limit, handler http.Handler) http.Handler {
+    return &ThrottledHandler{
+        throttle: wait.NewThrottle(limit, 1),
+        handler:  handler,
+    }
+}
+
+func (h *ThrottledHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    evt := func() error {
+        h.ServeHTTP(w, r)
+        return nil
+    }
+    h.throttle.Process(context.Background(), evt)
+}
 ```
 
 ## Contributors
