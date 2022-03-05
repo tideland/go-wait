@@ -98,11 +98,11 @@ func (t *Throttle) Burst() int {
 	return t.burst
 }
 
-// Process processes one or more events in a given context. If the limit is
+// Process executes one or more events in a given context. If the limit is
 // not infinite and the number of events is higher than the burst size or if
 // the number of events is too high for the maximum duration, then the call
-// will be declined. Also waiting can be too long of the context timeout is
-// reached earlier.
+// will be declined. Also waiting may be too long if the context timeout is
+// reached earlier which leads to an error.
 func (t *Throttle) Process(ctx context.Context, events ...Event) error {
 	// Check burst.
 	t.mu.RLock()

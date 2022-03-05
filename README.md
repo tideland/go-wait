@@ -20,9 +20,9 @@ function for testing has to be defined, different tickers for the polling can be
 
 Own tickers or changing intervals can be implemented too.
 
-Another component of the package is the Throttle, others would call it limiter. It allows the limited processing
-of events per second. These events are simple closures and you can define how many can be processed per event in
-general and in one call.
+Another component of the package is the throttle, others would call it limiter. It allows the limited processing
+of events per second. Events are closures or functions with a defined signature. Depending on the burst size of
+the throttle multiple events can be processed with one call.
 
 I hope you like it. ;)
 
