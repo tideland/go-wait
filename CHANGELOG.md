@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 (2022-03-27)
+
+* Migrate to Go 1.18
+
 ## v0.2.0 (2022-03-04)
 
 * Added Throttle
