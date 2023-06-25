@@ -1,6 +1,6 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2022 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -13,9 +13,7 @@ package wait_test // import "tideland.dev/go/wait"
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,170 +31,173 @@ func TestThrottle(t *testing.T) {
 	assert := asserts.NewTesting(t, asserts.FailStop)
 	tests := []struct {
 		name    string
-		events  int
-		perCall int
 		limit   wait.Limit
 		burst   int
-		fail    bool
-		cancel  bool
+		tasks   int
 		timeout time.Duration
 		err     string
 	}{
 		{
-			name:    "single-burst-single-event",
-			events:  55,
-			perCall: 1,
-			limit:   20.0,
-			burst:   1,
+			name:  "throttle allows no tasks",
+			limit: 0,
+			burst: 0,
+			tasks: 10,
+			err:   "Wait(n=1) exceeds limiter's burst 0",
 		},
 		{
-			name:    "larger-burst-single-event",
-			events:  55,
-			perCall: 1,
-			limit:   20.0,
-			burst:   5,
+			name:    "throttle has infinite limiit and no burst",
+			limit:   wait.InfLimit,
+			burst:   0,
+			tasks:   10,
+			timeout: time.Second,
 		},
 		{
-			name:    "single-burst-multiple-events",
-			events:  55,
-			perCall: 5,
-			limit:   20.0,
-			burst:   1,
-			err:     "event(s) exceeds throttle burst size 1",
+			name:  "throttle allows two tasks per second",
+			limit: 2,
+			burst: 1,
+			tasks: 10,
 		},
 		{
-			name:    "infinite-limit-multiple-events",
-			events:  55,
-			perCall: 5,
-			limit:   wait.InfiniteLimit,
-			burst:   1,
-		},
-		{
-			name:    "cancel-before-processing",
-			events:  55,
-			perCall: 1,
-			limit:   20.0,
-			burst:   1,
-			cancel:  true,
-			err:     "event(s) throttle context already done",
-		},
-		{
-			name:    "exceeding-context-timeout",
-			events:  55,
-			perCall: 1,
-			limit:   20.0,
-			burst:   1,
-			timeout: time.Millisecond,
-			err:     "event(s) would exceed throttle context deadline",
-		},
-		{
-			name:    "exceeding-event-timeout",
-			events:  10,
-			perCall: 1,
-			limit:   1,
-			burst:   1,
-			cancel:  true,
-			timeout: time.Millisecond,
-			err:     "event(s) throttle context timed out or cancelled",
-		},
-		{
-			name:    "error-in-event",
-			events:  5,
-			perCall: 1,
-			limit:   5,
-			burst:   1,
-			fail:    true,
-			err:     "processing event 0 returned error: ouch",
+			name:  "throttle allows five tasks per second",
+			limit: 5,
+			burst: 1,
+			tasks: 10,
 		},
 	}
-	// Run tests.
+	// Run the different tests.
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			assert.SetFailable(t)
-			// Preparings.
-			var rushesDone int64
-			var errorsReturned int64
-			rushes := test.events / test.perCall
-			event := func() error {
-				if test.fail {
-					return errors.New("ouch")
+		assert.Logf("test: %s", test.name)
+		throttle := wait.NewThrottle(test.limit, test.burst)
+		ctx := context.Background()
+		if test.timeout > 0 {
+			// Add a timeout to the context.
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, test.timeout)
+			defer cancel()
+		}
+		var wg sync.WaitGroup
+		wg.Add(test.tasks)
+		cc := &concurrencyCounter{}
+		start := time.Now()
+		task := func() error {
+			cc.incr()
+			defer cc.decr()
+			time.Sleep(25 * time.Millisecond)
+			return nil
+		}
+		for i := 0; i < test.tasks; i++ {
+			// Process the task in a goroutine.
+			go func() {
+				err := throttle.Process(ctx, task)
+				wg.Done()
+				if test.err == "" {
+					assert.NoError(err)
+				} else {
+					assert.ErrorContains(err, test.err)
 				}
+			}()
+		}
+		wg.Wait()
+		elapsed := time.Since(start)
+		assert.Logf("elapsed: %v", elapsed)
+		// Check the results.
+		if test.burst > 0 {
+			assert.Equal(cc.max(), test.burst, "maximum number of parallel goroutines defined by burst")
+		}
+		switch {
+		case test.limit == 0 && test.burst == 0:
+			assert.Equal(cc.max(), 0)
+		case test.limit > 0 && test.burst == 1:
+			expected := (time.Duration(test.tasks) / time.Duration(test.limit)) * time.Second
+			tenth := expected / 10
+			assert.Range(elapsed, expected-tenth, expected+tenth)
+		}
+	}
+}
+
+// TestThrottleBurst verifies the influence of the burst on throttling.
+func TestThrottleBurst(t *testing.T) {
+	assert := asserts.NewTesting(t, asserts.FailStop)
+	results := [3][3]struct {
+		burst   int
+		tasks   int
+		elapsed time.Duration
+	}{}
+	// Run nested tests.
+	for i, burst := range []int{1, 5, 100} {
+		for j, tasks := range []int{10, 50, 10000} {
+			assert.Logf("burst: %d, tasks: %d", burst, tasks)
+			throttle := wait.NewThrottle(wait.InfLimit, burst)
+			ctx := context.Background()
+			var wg sync.WaitGroup
+			wg.Add(tasks)
+			cc := &concurrencyCounter{}
+			start := time.Now()
+			task := func() error {
+				cc.incr()
+				defer cc.decr()
+				time.Sleep(25 * time.Millisecond)
 				return nil
 			}
-			throttle := wait.NewThrottle(test.limit, test.burst)
-			rushing := func() {
-				rush := func() {
-					ctx := context.Background()
-					events := []wait.Event{}
-					for j := 0; j < test.perCall; j++ {
-						events = append(events, event)
-					}
-					var cancel func()
-					switch {
-					case test.cancel && test.timeout == 0:
-						// Cancel context before it is used.
-						ctx, cancel = context.WithCancel(ctx)
-						cancel()
-						cancel = nil
-					case !test.cancel && test.timeout > 0:
-						// Set context with a timeout.
-						ctx, cancel = context.WithTimeout(ctx, test.timeout)
-						defer cancel()
-					case test.cancel && test.timeout > 0:
-						// Cancel the context while event is waiting.
-						ctx, cancel = context.WithCancel(ctx)
-						go func() {
-							time.Sleep(test.timeout)
-							cancel()
-						}()
-					}
-					err := throttle.Process(ctx, events...)
-					if err != nil {
-						atomic.AddInt64(&errorsReturned, 1)
-						assert.ErrorContains(err, test.err)
-					}
-					atomic.AddInt64(&rushesDone, 1)
+			for k := 0; k < tasks; k++ {
+				// Pause a bit every 250 tasks.
+				if k%250 == 0 {
+					time.Sleep(10 * time.Millisecond)
 				}
-				for i := 0; i < rushes; i++ {
-					go rush()
-				}
+				// Process the task in a goroutine.
+				go func() {
+					throttle.Process(ctx, task)
+					wg.Done()
+				}()
 			}
-			// Start rushing.
-			start := time.Now()
-
-			go rushing()
-
-			ticker := time.NewTicker(5 * time.Millisecond)
-			defer ticker.Stop()
-
-			for {
-				<-ticker.C
-
-				l := throttle.Limit()
-				b := throttle.Burst()
-
-				assert.Equal(l, wait.Limit(test.limit))
-				assert.Equal(b, test.burst)
-
-				if atomic.LoadInt64(&rushesDone) == int64(rushes) {
-					break
-				}
-			}
-
-			duration := time.Now().Sub(start)
-			seconds := float64(test.events) / float64(test.limit)
-			info := fmt.Sprintf("duration is %.4f, not %.4fs (+/- 0.25s)", duration.Seconds(), seconds)
-
-			if er := atomic.LoadInt64(&errorsReturned); er > 0 {
-				// In case of errors look at their count.
-				assert.True(er <= int64(rushes))
-			} else {
-				// Otherwise look at the count of the rushes and the time.
-				assert.Equal(atomic.LoadInt64(&rushesDone), int64(rushes))
-				assert.About(duration.Seconds(), seconds, 0.25, info)
-			}
-		})
+			wg.Wait()
+			elapsed := time.Since(start)
+			assert.Logf("elapsed: %v", elapsed)
+			results[i][j].burst = burst
+			results[i][j].tasks = tasks
+			results[i][j].elapsed = elapsed
+		}
 	}
+}
+
+//--------------------
+// HELPER
+//--------------------
+
+// concurrencyCounter is a helper to count the maximum number of
+// parallel running goroutines.
+type concurrencyCounter struct {
+	mu      sync.Mutex
+	current int
+	maximum int
+}
+
+// increase increases the current number of goroutines and
+// updates the maximum.
+func (cc *concurrencyCounter) incr() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	cc.current++
+	if cc.current > cc.maximum {
+		cc.maximum = cc.current
+	}
+}
+
+// decrease decreases the current number of goroutines.
+func (cc *concurrencyCounter) decr() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	cc.current--
+}
+
+// maximum returns the maximum number of parallel running goroutines.
+func (cc *concurrencyCounter) max() int {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	return cc.maximum
 }
 
 // EOF

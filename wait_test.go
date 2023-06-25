@@ -1,6 +1,6 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2022 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -126,7 +126,9 @@ func TestPolls(t *testing.T) {
 			assert.SetFailable(t)
 			ctx := context.Background()
 			if test.duration != 0 {
-				ctx, _ = context.WithTimeout(ctx, test.duration)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, test.duration)
+				assert.NotNil(cancel)
 			}
 			count := 0
 			condition := func() (bool, error) {
@@ -217,7 +219,9 @@ func TestConvenience(t *testing.T) {
 			assert.SetFailable(t)
 			ctx := context.Background()
 			if test.duration != 0 {
-				ctx, _ = context.WithTimeout(ctx, test.duration)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, test.duration)
+				assert.NotNil(cancel)
 			}
 			count := 0
 			condition := func() (bool, error) {

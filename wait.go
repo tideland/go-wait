@@ -1,6 +1,6 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2022 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -30,14 +30,14 @@ type ConditionFunc func() (bool, error)
 // Poll provides different ways to wait for conditions by polling. The conditions
 // are checked by user defined functions with the signature
 //
-//     func() (ok bool, err error)
+//	func() (ok bool, err error)
 //
 // Here the bool return value signals if the condition is fulfilled, e.g. a file
 // you're waiting for has been written into the according directory.
 //
 // This signal for check a condition is returned by a ticker with the signature
 //
-//     func(ctx context.Context) <-chan struct{}
+//	func(ctx context.Context) <-chan struct{}
 //
 // The context is for signalling the ticker to end working, the channel for the signals.
 // Pre-defined tickers support
@@ -51,7 +51,7 @@ type ConditionFunc func() (bool, error)
 // The behaviour of changing intervals can be user-defined by
 // functions with the signature
 //
-//     func(in time.Duration) (out time.Duration, ok bool)
+//	func(in time.Duration) (out time.Duration, ok bool)
 //
 // Here the argument is the current interval, return values are the
 // wanted interval and if the polling shall continue. For the predefined
@@ -59,24 +59,24 @@ type ConditionFunc func() (bool, error)
 //
 // Example (waiting for a file to exist):
 //
-//     // Tick every second for maximal 30 seconds.
-//     ticker := wait.MakeExpiringIntervalTicker(time.Second, 30*time.Second),
+//	// Tick every second for maximal 30 seconds.
+//	ticker := wait.MakeExpiringIntervalTicker(time.Second, 30*time.Second),
 //
-//     // Check for existence of a file.
-//     condition := func() (bool, error) {
-//         _, err := os.Stat("myfile.txt")
-//         if err != nil {
-//             if os.IsNotExist(err) {
-//                 return false, nil
-//             }
-//             return false, err
-//         }
-//         // Found file.
-//         return true, nil
-//     }
+//	// Check for existence of a file.
+//	condition := func() (bool, error) {
+//	    _, err := os.Stat("myfile.txt")
+//	    if err != nil {
+//	        if os.IsNotExist(err) {
+//	            return false, nil
+//	        }
+//	        return false, err
+//	    }
+//	    // Found file.
+//	    return true, nil
+//	}
 //
-//     // And now poll.
-//     wait.Poll(ctx, ticker, condition)
+//	// And now poll.
+//	wait.Poll(ctx, ticker, condition)
 //
 // From outside the polling can be stopped by cancelling the context.
 func Poll(ctx context.Context, ticker TickerFunc, condition ConditionFunc) error {
