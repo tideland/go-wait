@@ -69,7 +69,7 @@ func NewThrottledHandler(limit wait.Limit, handler http.Handler) http.Handler {
 
 func (h *ThrottledHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     evt := func() error {
-        h.ServeHTTP(w, r)
+        h.handler.ServeHTTP(w, r)
         return nil
     }
     h.throttle.Process(context.Background(), evt)
