@@ -1,6 +1,6 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2024 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -10,6 +10,7 @@
 //
 // Additionally the package provide a throttle for the limited processing
 // of events per second.
+
 package wait // import "tideland.dev/go/wait"
 
 // EOF

@@ -45,7 +45,7 @@ func TestThrottle(t *testing.T) {
 			err:   "Wait(n=1) exceeds limiter's burst 0",
 		},
 		{
-			name:    "throttle has infinite limiit and no burst",
+			name:    "throttle has infinite limit and no burst",
 			limit:   wait.InfLimit,
 			burst:   0,
 			tasks:   10,
