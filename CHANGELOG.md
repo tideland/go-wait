@@ -2,7 +2,7 @@
 
 ### v0.3.0
 
-- Migrated to Go 1.20
+- Migrated to Go 1.22
 - Simplified `Throttle` implementation
 - Migrated to Go 1.18
 
