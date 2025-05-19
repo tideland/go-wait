@@ -1,6 +1,6 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -159,21 +159,6 @@ func WithTimeout(
 	return Poll(
 		ctx,
 		MakeExpiringIntervalTicker(interval, timeout),
-		condition,
-	)
-}
-
-// WithJitter is convenience for Poll() with MakeJitteringTicker().
-func WithJitter(
-	ctx context.Context,
-	interval time.Duration,
-	factor float64,
-	timeout time.Duration,
-	condition ConditionFunc,
-) error {
-	return Poll(
-		ctx,
-		MakeJitteringTicker(interval, factor, timeout),
 		condition,
 	)
 }

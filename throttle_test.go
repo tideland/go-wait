@@ -1,6 +1,6 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"tideland.dev/go/audit/asserts"
+	"tideland.dev/go/asserts/verify"
 
 	"tideland.dev/go/wait"
 )
@@ -28,7 +28,6 @@ import (
 
 // TestThrottle verifies the throttling of parallel processed events.
 func TestThrottle(t *testing.T) {
-	assert := asserts.NewTesting(t, asserts.FailStop)
 	tests := []struct {
 		name    string
 		limit   wait.Limit
@@ -66,7 +65,7 @@ func TestThrottle(t *testing.T) {
 	}
 	// Run the different tests.
 	for _, test := range tests {
-		assert.Logf("test: %s", test.name)
+		t.Logf("test: %s", test.name)
 		throttle := wait.NewThrottle(test.limit, test.burst)
 		ctx := context.Background()
 		if test.timeout > 0 {
@@ -82,42 +81,45 @@ func TestThrottle(t *testing.T) {
 		task := func() error {
 			cc.incr()
 			defer cc.decr()
+			// Each task takes a consistent amount of time
 			time.Sleep(25 * time.Millisecond)
 			return nil
 		}
-		for i := 0; i < test.tasks; i++ {
+		for range test.tasks {
 			// Process the task in a goroutine.
 			go func() {
 				err := throttle.Process(ctx, task)
 				wg.Done()
 				if test.err == "" {
-					assert.NoError(err)
+					verify.NoError(t, err)
 				} else {
-					assert.ErrorContains(err, test.err)
+					verify.ErrorContains(t, test.err, err)
 				}
 			}()
 		}
 		wg.Wait()
 		elapsed := time.Since(start)
-		assert.Logf("elapsed: %v", elapsed)
+		t.Logf("elapsed: %v", elapsed)
 		// Check the results.
 		if test.burst > 0 {
-			assert.Equal(cc.max(), test.burst, "maximum number of parallel goroutines defined by burst")
+			verify.Equal(t, cc.max(), test.burst, "maximum number of parallel goroutines defined by burst")
 		}
 		switch {
 		case test.limit == 0 && test.burst == 0:
-			assert.Equal(cc.max(), 0)
+			verify.Equal(t, cc.max(), 0)
 		case test.limit > 0 && test.burst == 1:
-			expected := (time.Duration(test.tasks) / time.Duration(test.limit)) * time.Second
-			tenth := expected / 10
-			assert.Range(elapsed, expected-tenth, expected+tenth)
+			// For a throttle with limit N per second and burst 1:
+			// - To process M tasks, it should take approximately M/N seconds
+			// Don't try to be too precise with timing as it varies by system
+			minTime := time.Duration(float64(test.tasks-1)/float64(test.limit)) * time.Second
+			maxTime := time.Duration(float64(test.tasks+2)/float64(test.limit)) * time.Second
+			verify.InRange(t, minTime, maxTime, elapsed)
 		}
 	}
 }
 
 // TestThrottleBurst verifies the influence of the burst on throttling.
 func TestThrottleBurst(t *testing.T) {
-	assert := asserts.NewTesting(t, asserts.FailStop)
 	results := [3][3]struct {
 		burst   int
 		tasks   int
@@ -126,7 +128,7 @@ func TestThrottleBurst(t *testing.T) {
 	// Run nested tests.
 	for i, burst := range []int{1, 5, 100} {
 		for j, tasks := range []int{10, 50, 10000} {
-			assert.Logf("burst: %d, tasks: %d", burst, tasks)
+			t.Logf("burst: %d, tasks: %d", burst, tasks)
 			throttle := wait.NewThrottle(wait.InfLimit, burst)
 			ctx := context.Background()
 			var wg sync.WaitGroup
@@ -139,7 +141,7 @@ func TestThrottleBurst(t *testing.T) {
 				time.Sleep(25 * time.Millisecond)
 				return nil
 			}
-			for k := 0; k < tasks; k++ {
+			for k := range tasks {
 				// Pause a bit every 250 tasks.
 				if k%250 == 0 {
 					time.Sleep(10 * time.Millisecond)
@@ -152,7 +154,7 @@ func TestThrottleBurst(t *testing.T) {
 			}
 			wg.Wait()
 			elapsed := time.Since(start)
-			assert.Logf("elapsed: %v", elapsed)
+			t.Logf("elapsed: %v", elapsed)
 			results[i][j].burst = burst
 			results[i][j].tasks = tasks
 			results[i][j].elapsed = elapsed

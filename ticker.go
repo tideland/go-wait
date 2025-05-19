@@ -1,6 +1,6 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2023 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
@@ -13,7 +13,6 @@ package wait // import "tideland.dev/go/wait"
 
 import (
 	"context"
-	"math/rand"
 	"time"
 )
 
@@ -124,20 +123,17 @@ func MakeExpiringIntervalTicker(interval, timeout time.Duration) TickerFunc {
 	return MakeGenericIntervalTicker(changer)
 }
 
-// MakeJitteringTicker returns a ticker signalling in jittering intervals. This
-// avoids converging on periadoc behavior during condition check. The returned
-// intervals jitter between the given interval and interval + factor * interval.
-// The ticker stops after reaching timeout.
-func MakeJitteringTicker(interval time.Duration, factor float64, timeout time.Duration) TickerFunc {
+// MakeExpiringMaxIntervalsTicker returns a ticker signalling in intervals
+// and stopping after a timeout or a maximum number of signals.
+func MakeExpiringMaxIntervalsTicker(interval, timeout time.Duration, max int) TickerFunc {
+	count := 0
 	deadline := time.Now().Add(timeout)
-	changer := func(_ time.Duration) (time.Duration, bool) {
-		if time.Now().After(deadline) {
+	changer := func(_ time.Duration) (out time.Duration, ok bool) {
+		count++
+		if count > max || time.Now().After(deadline) {
 			return 0, false
 		}
-		if factor <= 0.0 {
-			factor = 1.0
-		}
-		return interval + time.Duration(rand.Float64()*factor*float64(interval)), true
+		return interval, true
 	}
 	return MakeGenericIntervalTicker(changer)
 }
