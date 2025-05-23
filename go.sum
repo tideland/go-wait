@@ -2,5 +2,5 @@ golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 h1:aAcj0Da7eBAtrTp03QXWvm88p
 golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8/go.mod h1:CQ1k9gNrJ50XIzaKCRR2hssIjF07kZFEiieALBM/ARQ=
 golang.org/x/time v0.5.0 h1:o7cqy6amK/52YcAKIPlM3a+Fpj35zvRj2TP+e1xFSfk=
 golang.org/x/time v0.5.0/go.mod h1:3BpzKBy/shNhVucY/MWOyx10tF3SFh9QdLuxbVysPQM=
-tideland.dev/go/asserts v0.1.1 h1:dTyeLxbOG7k4XvLRFGu/MJTBL5BcBvEnyIF23Ya68eQ=
-tideland.dev/go/asserts v0.1.1/go.mod h1:laqSQiIavjBDGZJqlo+mj7uCoyL8tUd+s1RKdqcpJYI=
+tideland.dev/go/asserts v0.2.1 h1:All0fJPgEwtl1IHFTl52aY/K8DrSJbvpqAu8aZAjtgQ=
+tideland.dev/go/asserts v0.2.1/go.mod h1:laqSQiIavjBDGZJqlo+mj7uCoyL8tUd+s1RKdqcpJYI=
