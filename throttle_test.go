@@ -93,7 +93,7 @@ func TestThrottle(t *testing.T) {
 				if test.err == "" {
 					verify.NoError(t, err)
 				} else {
-					verify.ErrorContains(t, test.err, err)
+					verify.ErrorContains(t, err, test.err)
 				}
 			}()
 		}
@@ -106,14 +106,14 @@ func TestThrottle(t *testing.T) {
 		}
 		switch {
 		case test.limit == 0 && test.burst == 0:
-			verify.Equal(t, cc.max(), 0)
+			verify.Equal(t, cc.max(), 0, "maximum number of parallel goroutines defined by burst")
 		case test.limit > 0 && test.burst == 1:
 			// For a throttle with limit N per second and burst 1:
 			// - To process M tasks, it should take approximately M/N seconds
 			// Don't try to be too precise with timing as it varies by system
 			minTime := time.Duration(float64(test.tasks-1)/float64(test.limit)) * time.Second
 			maxTime := time.Duration(float64(test.tasks+2)/float64(test.limit)) * time.Second
-			verify.InRange(t, minTime, maxTime, elapsed)
+			verify.InRange(t, elapsed, minTime, maxTime, "elapsed time")
 		}
 	}
 }

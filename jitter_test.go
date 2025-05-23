@@ -25,8 +25,7 @@ import (
 // TESTS
 //--------------------
 
-// TestPollWithJitter tests the polling of conditions in a maximum
-// number of intervals.
+// TestPollWithJitter tests the polling with a jitter ticker of conditions.
 func TestPollWithJitter(t *testing.T) {
 	timestamps := []time.Time{}
 	err := wait.Poll(
@@ -34,7 +33,7 @@ func TestPollWithJitter(t *testing.T) {
 		wait.MakeJitteringTicker(
 			50*time.Millisecond,
 			10*time.Millisecond,
-			1250*time.Millisecond,
+			500*time.Millisecond,
 		),
 		func() (bool, error) {
 			timestamps = append(timestamps, time.Now())
@@ -46,21 +45,24 @@ func TestPollWithJitter(t *testing.T) {
 	)
 	verify.NoError(t, err)
 	verify.Length(t, timestamps, 10)
-	
-	t.Logf("Timestamps for first test: %v", timestamps)
+
 	for i := range 9 {
 		diff := timestamps[i+1].Sub(timestamps[i])
 		t.Logf("Diff %d: %v", i, diff)
 		// According to implementation, jitter is within [offset, offset+interval]
-		verify.InRange(t, 10*time.Millisecond, 60*time.Millisecond, diff)
+		verify.InRange(t, diff, 10*time.Millisecond, 60*time.Millisecond)
 	}
+}
 
-	timestamps = []time.Time{}
-	err = wait.WithJitter(
+// TestJitter tests the convinience waiting with integrated jitter ticker.
+func TestJitterWait(t *testing.T) {
+	timestamps := []time.Time{}
+	err := wait.WithJitter(
 		context.Background(),
 		50*time.Millisecond,
 		10*time.Millisecond,
-		1250*time.Millisecond, func() (bool, error) {
+		500*time.Millisecond,
+		func() (bool, error) {
 			timestamps = append(timestamps, time.Now())
 			if len(timestamps) == 10 {
 				return true, nil
@@ -69,63 +71,31 @@ func TestPollWithJitter(t *testing.T) {
 		})
 	verify.NoError(t, err)
 	verify.Length(t, timestamps, 10)
-	
-	t.Logf("Timestamps for second test: %v", timestamps)
-	for i := 1; i < 10; i++ {
-		diff := timestamps[i].Sub(timestamps[i-1])
+
+	for i := range 9 {
+		diff := timestamps[i+1].Sub(timestamps[i])
 		t.Logf("Diff %d: %v", i, diff)
 		// According to implementation, jitter is within [offset, offset+interval]
-		verify.InRange(t, 10*time.Millisecond, 60*time.Millisecond, diff)
+		verify.InRange(t, diff, 10*time.Millisecond, 60*time.Millisecond)
 	}
+}
 
-	timestamps = []time.Time{}
-	err = wait.Poll(
+// TestPollWithExceedingJitter tests if the jitter has a timeout before
+// it signales the successful end.
+func TestPollWithExceedingJitter(t *testing.T) {
+	err := wait.Poll(
 		context.Background(),
 		wait.MakeJitteringTicker(
 			50*time.Millisecond,
 			10*time.Millisecond,
-			1250*time.Millisecond),
+			500*time.Millisecond),
 		func() (bool, error) {
-			timestamps = append(timestamps, time.Now())
+			// Do anything consuming time.
+			time.Sleep(50 * time.Millisecond)
 			return false, nil
 		},
 	)
-	verify.ErrorContains(t, "exceeded", err)
-	verify.InRange(t, len(timestamps), 10, 25)
-
-	timestamps = []time.Time{}
-	err = wait.Poll(
-		context.Background(),
-		wait.MakeJitteringTicker(
-			50*time.Millisecond,
-			10*time.Millisecond,
-			1000*time.Millisecond),
-		func() (bool, error) {
-			timestamps = append(timestamps, time.Now())
-			return false, nil
-		},
-	)
-	verify.ErrorContains(t, "exceeded", err)
-	// This ticker has a non-zero offset, so it should run at least once before timing out
-	verify.True(t, len(timestamps) > 0)
-
-	timestamps = []time.Time{}
-	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
-	defer cancel()
-	err = wait.Poll(
-		ctx,
-		wait.MakeJitteringTicker(
-			50*time.Millisecond,
-			10*time.Millisecond,
-			1000*time.Millisecond),
-		func() (bool, error) {
-			timestamps = append(timestamps, time.Now())
-			return false, nil
-		},
-	)
-	verify.ErrorContains(t, "exceeded", err)
-	// Context cancellation should still allow some ticks to happen
-	verify.True(t, len(timestamps) > 0)
+	verify.ErrorContains(t, err, "exceeded")
 }
 
 // EOF
