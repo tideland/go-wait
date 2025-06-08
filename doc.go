@@ -11,6 +11,6 @@
 // Additionally the package provide a throttle for the limited processing
 // of events per second.
 
-package wait // import "tideland.dev/go/wait"
+package wait
 
 // EOF
