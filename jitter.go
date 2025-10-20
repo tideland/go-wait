@@ -1,15 +1,12 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -84,4 +81,3 @@ func WithJitter(
 	)
 }
 
-// EOF

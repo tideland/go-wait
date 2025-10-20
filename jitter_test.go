@@ -1,15 +1,12 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait_test
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -21,9 +18,6 @@ import (
 	"tideland.dev/go/wait"
 )
 
-//--------------------
-// TESTS
-//--------------------
 
 // TestPollWithJitter tests the polling with a jitter ticker of conditions.
 func TestPollWithJitter(t *testing.T) {
@@ -98,4 +92,3 @@ func TestPollWithExceedingJitter(t *testing.T) {
 	verify.ErrorContains(t, err, "exceeded")
 }
 
-// EOF

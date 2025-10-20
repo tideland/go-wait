@@ -1,15 +1,12 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -19,9 +16,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-//--------------------
-// THROTTLE
-//--------------------
 
 // Task defines the signarure of a task to be processed.
 type Task func() error
@@ -59,4 +53,3 @@ func (t *Throttle) Process(ctx context.Context, task Task) error {
 	return task()
 }
 
-// EOF

@@ -1,15 +1,12 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait_test
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -21,9 +18,6 @@ import (
 	"tideland.dev/go/wait"
 )
 
-//--------------------
-// TESTS
-//--------------------
 
 // TestPolls verifies Poll() with different parameters.
 func TestPolls(t *testing.T) {
@@ -415,9 +409,6 @@ func TestPanic(t *testing.T) {
 	verify.Equal(t, count, 5)
 }
 
-//--------------------
-// HELPER
-//--------------------
 
 // mkChgTicker creates a ticker with a changing interval.
 func mkChgTicker() wait.TickerFunc {
@@ -434,4 +425,3 @@ func mkChgTicker() wait.TickerFunc {
 	})
 }
 
-// EOF

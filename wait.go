@@ -1,15 +1,12 @@
 // Tideland Go Wait
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -17,9 +14,6 @@ import (
 	"time"
 )
 
-//--------------------
-// POLL
-//--------------------
 
 // ConditionFunc has to be implemented for checking the wanted condition. A positive
 // condition will return true and nil, a negative false and nil. In case of failure
@@ -163,9 +157,6 @@ func WithTimeout(
 	)
 }
 
-//--------------------
-// PRIVATE HELPER
-//--------------------
 
 // check runs the condition catching potential panics and returns
 // them as failure.
@@ -180,4 +171,3 @@ func check(condition ConditionFunc) (ok bool, err error) {
 	return
 }
 
-// EOF

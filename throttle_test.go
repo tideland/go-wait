@@ -1,15 +1,12 @@
 // Tideland Go Wait - Unit Tests
 //
-// Copyright (C) 2019-2025 Frank Mueller / Tideland / Oldenburg / Germany
+// Copyright (C) 2019-2025 Frank Mueller / Tideland / Germany
 //
 // All rights reserved. Use of this source code is governed
 // by the new BSD license.
 
 package wait_test
 
-//--------------------
-// IMPORTS
-//--------------------
 
 import (
 	"context"
@@ -22,9 +19,6 @@ import (
 	"tideland.dev/go/wait"
 )
 
-//--------------------
-// TESTS
-//--------------------
 
 // TestThrottle verifies the throttling of parallel processed events.
 func TestThrottle(t *testing.T) {
@@ -162,9 +156,6 @@ func TestThrottleBurst(t *testing.T) {
 	}
 }
 
-//--------------------
-// HELPER
-//--------------------
 
 // concurrencyCounter is a helper to count the maximum number of
 // parallel running goroutines.
@@ -202,4 +193,3 @@ func (cc *concurrencyCounter) max() int {
 	return cc.maximum
 }
 
-// EOF
