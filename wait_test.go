@@ -7,7 +7,6 @@
 
 package wait_test
 
-
 import (
 	"context"
 	"testing"
@@ -17,7 +16,6 @@ import (
 
 	"tideland.dev/go/wait"
 )
-
 
 // TestPolls verifies Poll() with different parameters.
 func TestPolls(t *testing.T) {
@@ -395,21 +393,6 @@ func TestUserDefinedTicker(t *testing.T) {
 	verify.ErrorContains(t, err, "cancelled")
 }
 
-// TestPanic tests the handling of panics during condition checks.
-func TestPanic(t *testing.T) {
-	count := 0
-	err := wait.WithInterval(context.Background(), 10*time.Millisecond, func() (bool, error) {
-		count++
-		if count == 5 {
-			panic("ouch at five o'clock")
-		}
-		return false, nil
-	})
-	verify.ErrorContains(t, err, "panic")
-	verify.Equal(t, count, 5)
-}
-
-
 // mkChgTicker creates a ticker with a changing interval.
 func mkChgTicker() wait.TickerFunc {
 	interval := 5 * time.Millisecond
@@ -424,4 +407,3 @@ func mkChgTicker() wait.TickerFunc {
 		return out, true
 	})
 }
-

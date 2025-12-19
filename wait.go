@@ -7,13 +7,11 @@
 
 package wait
 
-
 import (
 	"context"
 	"fmt"
 	"time"
 )
-
 
 // ConditionFunc has to be implemented for checking the wanted condition. A positive
 // condition will return true and nil, a negative false and nil. In case of failure
@@ -90,7 +88,7 @@ func Poll(ctx context.Context, ticker TickerFunc, condition ConditionFunc) error
 				// Oh, ticker tells to end.
 				return fmt.Errorf("ticker exceeded while waiting for the condition")
 			}
-			ok, err := check(condition)
+			ok, err := condition()
 			if err != nil {
 				// ConditionFunc has an error.
 				return fmt.Errorf("poll condition returned error: %v", err)
@@ -156,18 +154,3 @@ func WithTimeout(
 		condition,
 	)
 }
-
-
-// check runs the condition catching potential panics and returns
-// them as failure.
-func check(condition ConditionFunc) (ok bool, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			ok = false
-			err = fmt.Errorf("panic during condition check: %v", r)
-		}
-	}()
-	ok, err = condition()
-	return
-}
-
