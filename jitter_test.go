@@ -38,14 +38,19 @@ func TestPollWithJitter(t *testing.T) {
 	verify.NoError(t, err)
 	verify.Length(t, timestamps, 10)
 
+	var total time.Duration
 	for i := range 9 {
 		diff := timestamps[i+1].Sub(timestamps[i])
 		t.Logf("Diff %d: %v", i, diff)
-		// According to implementation, jitter is within [offset, offset+interval].
-		// Due to system load the diff can be a bit less than the offset or a bit
-		// more than the offset+interval. So we give it a bit of tolerance.
-		verify.InRange(t, diff, 0, 62*time.Millisecond)
+		total += diff
 	}
+	average := total / 9
+	t.Logf("Average diff: %v", average)
+
+	// Expected average is offset + interval/2 = 35ms.
+	// We give it a tolerance of +/- 15ms due to the randomness
+	// and system load.
+	verify.InRange(t, average, 20*time.Millisecond, 50*time.Millisecond)
 }
 
 // TestJitter tests the convinience waiting with integrated jitter ticker.
@@ -66,14 +71,19 @@ func TestJitterWait(t *testing.T) {
 	verify.NoError(t, err)
 	verify.Length(t, timestamps, 10)
 
+	var total time.Duration
 	for i := range 9 {
 		diff := timestamps[i+1].Sub(timestamps[i])
 		t.Logf("Diff %d: %v", i, diff)
-		// According to implementation, jitter is within [offset, offset+interval].
-		// Due to system load the diff can be a bit less than the offset or a bit
-		// more than the offset+interval. So we give it a bit of tolerance.
-		verify.InRange(t, diff, 0, 62*time.Millisecond)
+		total += diff
 	}
+	average := total / 9
+	t.Logf("Average diff: %v", average)
+
+	// Expected average is offset + interval/2 = 35ms.
+	// We give it a tolerance of +/- 15ms due to the randomness
+	// and system load.
+	verify.InRange(t, average, 20*time.Millisecond, 50*time.Millisecond)
 }
 
 // TestPollWithExceedingJitter tests if the jitter has a timeout before
